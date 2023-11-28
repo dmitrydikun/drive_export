@@ -41,7 +41,7 @@ type targetConfig struct {
 	TelegramChannel  string `json:"telegram_channel"`
 	Template         string `json:"template"`
 	IndexPlaceholder string `json:"index_placeholder"`
-	//Prefix           string `json:"prefix"`
+	StaticPrefix     string `json:"static_prefix"`
 }
 
 func readConfig() (*config, error) {

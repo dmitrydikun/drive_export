@@ -170,16 +170,16 @@ func (tt *telegramTarget) Finish() error {
 const htmlCatalogTargetType = "html_catalog"
 
 type htmlCatalogTarget struct {
-	taskDir      string
-	name         string
-	catalog      string
-	catalogDir   string
-	catalogIndex string
-	tmpIndex     string
-	indexBuf     []byte
-	lastId       int
-	template     *template.Template
-	//prefix           string
+	taskDir          string
+	name             string
+	catalog          string
+	catalogDir       string
+	catalogIndex     string
+	tmpIndex         string
+	indexBuf         []byte
+	lastId           int
+	template         *template.Template
+	staticPrefix     string
 	indexPlaceholder string
 }
 
@@ -217,15 +217,15 @@ func newHTMLCatalogTarget(cfg *targetConfig, tdir string) (target, error) {
 		}
 	}
 	t := &htmlCatalogTarget{
-		taskDir:      tdir,
-		name:         cfg.Name,
-		catalog:      cfg.Catalog,
-		catalogDir:   cdir,
-		catalogIndex: idxfile,
-		indexBuf:     idxbuf,
-		lastId:       maxId,
-		template:     tmpl,
-		//prefix:           strings.Trim(cfg.Prefix, "/"),
+		taskDir:          tdir,
+		name:             cfg.Name,
+		catalog:          cfg.Catalog,
+		catalogDir:       cdir,
+		catalogIndex:     idxfile,
+		indexBuf:         idxbuf,
+		lastId:           maxId,
+		template:         tmpl,
+		staticPrefix:     strings.Trim(cfg.StaticPrefix, "/"),
 		indexPlaceholder: cfg.IndexPlaceholder,
 	}
 	t.tmpIndex = filepath.Join(tdir, t.ID()+"_index.html")
@@ -318,7 +318,7 @@ func (ct *htmlCatalogTarget) Insert(row1 map[string]string, fs *drive.FilesServi
 					return err
 				}
 			}
-			row["audio"] = fmt.Sprintf("/%s/%s/%s", ct.catalog, id, aname)
+			row["audio"] = filepath.Join("/", ct.staticPrefix, ct.catalog, id, aname)
 		}
 		f, err := os.OpenFile(filepath.Join(idir, "index.html"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, filePerm)
 		if err != nil {
