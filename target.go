@@ -64,6 +64,14 @@ func copyRow(row map[string]string) map[string]string {
 	return row2
 }
 
+func copyRowAny(row map[string]string) map[string]any {
+	row2 := make(map[string]any, len(row))
+	for k, v := range row {
+		row2[k] = v
+	}
+	return row2
+}
+
 const telegramTargetType = "telegram"
 
 type telegramTarget struct {
@@ -236,22 +244,22 @@ func (ct *htmlCatalogTarget) Name() string {
 	return ct.name
 }
 
-func (ct *htmlCatalogTarget) Insert(row map[string]string, fs *drive.FilesService) (string, error) {
-	row = copyRow(row)
+func (ct *htmlCatalogTarget) Insert(row1 map[string]string, fs *drive.FilesService) (string, error) {
+	row := copyRowAny(row1)
 
-	title := row["title"]
+	title, _ := row["title"].(string)
 	if title == "" {
 		return "", errors.New("invalid row: no title")
 	}
-	text := row["text"]
+	text, _ := row["text"].(string)
 	if text == "" {
 		return "", errors.New("invalid row: no text")
 	}
-	row["text"] = strings.ReplaceAll(
+	row["text"] = template.HTML(strings.ReplaceAll(
 		"<p>"+strings.ReplaceAll(text, "\n", "</p><p>")+"</p>",
 		"<p></p>",
 		"",
-	)
+	))
 
 	id := strconv.Itoa(ct.lastId + 1)
 	idir := filepath.Join(ct.catalogDir, id)
@@ -259,7 +267,7 @@ func (ct *htmlCatalogTarget) Insert(row map[string]string, fs *drive.FilesServic
 		return "", err
 	}
 	if err := func() error {
-		if aname, ok := row["audio"]; ok && aname != "" {
+		if aname, ok := row["audio"].(string); ok && aname != "" {
 			tadir := filepath.Join(ct.taskDir, "audio")
 			tafile := filepath.Join(tadir, aname)
 			iafile := filepath.Join(idir, aname)
@@ -310,7 +318,7 @@ func (ct *htmlCatalogTarget) Insert(row map[string]string, fs *drive.FilesServic
 					return err
 				}
 			}
-			row["audio"] = fmt.Sprintf("//%s/%s/%s", ct.catalog, id, aname)
+			row["audio"] = fmt.Sprintf("/%s/%s/%s", ct.catalog, id, aname)
 		}
 		f, err := os.OpenFile(filepath.Join(idir, "index.html"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, filePerm)
 		if err != nil {
@@ -322,7 +330,7 @@ func (ct *htmlCatalogTarget) Insert(row map[string]string, fs *drive.FilesServic
 			return fmt.Errorf("failed to render template: %v", err)
 		}
 		ct.indexBuf = bytes.Replace(ct.indexBuf, []byte(ct.indexPlaceholder),
-			[]byte(fmt.Sprintf(`<li><a href='/%s?item=%s'>%s</a></li>`, ct.name, id, title)+ct.indexPlaceholder), 1)
+			[]byte(fmt.Sprintf(`<li><a href='/%s?item=%s'>%s</a></li>`, ct.catalog, id, title)+ct.indexPlaceholder), 1)
 		if err = os.WriteFile(ct.tmpIndex, ct.indexBuf, filePerm); err != nil {
 			return err
 		}
