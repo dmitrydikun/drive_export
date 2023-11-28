@@ -27,7 +27,7 @@ type export struct {
 	cfg   *config
 	dir   string
 	fs    *drive.FilesService
-	items map[string]*item
+	tasks map[string]*task
 }
 
 const (
@@ -40,15 +40,18 @@ func newExport(cfg *config) (*export, error) {
 	var exp = &export{cfg: cfg}
 	exp.dir = filepath.Join(cfg.DataDir, time.Now().Format(time.DateTime))
 	if err = os.MkdirAll(exp.dir, dirPerm); err != nil {
-		return nil, fmt.Errorf("failed to create export dir: %v", err)
+		return nil, fmt.Errorf("failed to create export exportDir: %v", err)
 	}
-	exp.items = make(map[string]*item, len(cfg.Items))
-	for _, icfg := range cfg.Items {
-		item, err := newItem(cfg, icfg, exp.dir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to init item %s: %v", icfg.Name, err)
+	exp.tasks = make(map[string]*task, len(cfg.Tasks))
+	for _, tcfg := range cfg.Tasks {
+		if _, ok := exp.tasks[tcfg.Name]; ok {
+			return nil, fmt.Errorf("invalid config: duplicated task %s", tcfg.Name)
 		}
-		exp.items[icfg.Name] = item
+		t, err := newTask(cfg, tcfg, exp.dir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init task %s: %v", tcfg.Name, err)
+		}
+		exp.tasks[tcfg.Name] = t
 	}
 	exp.fs, err = getDriveFilesService(cfg)
 	if err != nil {
@@ -58,30 +61,30 @@ func newExport(cfg *config) (*export, error) {
 }
 
 func (exp *export) fetch() {
-	for name, item := range exp.items {
-		log.Printf("fetching item: %s\n", item.name)
-		if err := item.fetch(exp.fs); err != nil {
+	for name, t := range exp.tasks {
+		log.Printf("fetching task: %s\n", t.name)
+		if err := t.fetch(exp.fs); err != nil {
 			log.Printf("fail: %v\n", err)
-			delete(exp.items, name)
+			delete(exp.tasks, name)
 		} else {
-			log.Printf("success: %s -> %s\n", item.origin, item.source)
+			log.Printf("success: %s -> %s\n", t.origin, t.source)
 		}
 	}
 }
 
 func (exp *export) process() {
-	for _, item := range exp.items {
-		log.Printf("processing item: %s\n", item.name)
-		if err := item.process(exp.fs); err != nil {
+	for _, t := range exp.tasks {
+		log.Printf("processing task: %s\n", t.name)
+		if err := t.process(exp.fs); err != nil {
 			log.Printf("fail: %v\n", err)
 		}
 	}
 }
 
 func (exp *export) upload() {
-	for _, item := range exp.items {
-		log.Printf("updating item: %s\n", item.name)
-		if err := item.update(exp.fs); err != nil {
+	for _, t := range exp.tasks {
+		log.Printf("updating task: %s\n", t.name)
+		if err := t.update(exp.fs); err != nil {
 			log.Printf("fail: %v\n", err)
 		}
 	}

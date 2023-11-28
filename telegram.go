@@ -45,7 +45,7 @@ func telegramSendMessage(token string, chat string, text string) (string, error)
 	return telegramParseResponse(resp)
 }
 
-func telegramSendAudio(token string, chat string, audio string, audioReader io.Reader, text string) (string, error) {
+func telegramSendAudioStream(token string, chat string, audio string, audioReader io.Reader, audioWriter io.Writer, text string) (string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	for key, val := range map[string]string{
@@ -65,7 +65,12 @@ func telegramSendAudio(token string, chat string, audio string, audioReader io.R
 	if err != nil {
 		return "", err
 	}
-	if _, err = io.Copy(part, audioReader); err != nil {
+	if audioWriter != nil {
+		_, err = io.Copy(io.MultiWriter(part, audioWriter), audioReader)
+	} else {
+		_, err = io.Copy(part, audioReader)
+	}
+	if err != nil {
 		return "", err
 	}
 	if err = w.Close(); err != nil {

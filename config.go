@@ -24,25 +24,24 @@ type config struct {
 	GoogleCredentialsFile string        `json:"google_credentials_file"`
 	GoogleTokenFile       string        `json:"google_token_file"`
 	TelegramBotToken      string        `json:"telegram_bot_token"`
-	Items                 []*itemConfig `json:"items"`
+	Tasks                 []*taskConfig `json:"tasks"`
 }
 
-type itemConfig struct {
+type taskConfig struct {
 	Name    string          `json:"name"`
 	File    string          `json:"file"`
 	Targets []*targetConfig `json:"targets"`
 }
 
-//TelegramChannel *struct {
-//} `json:"telegram_channel"`
-//Site *struct {
-//} `json:"site"`
-
 type targetConfig struct {
-	Type            string `json:"type"`
-	Name            string `json:"name"`
-	TelegramChannel string `json:"telegram_channel"`
-	Template        string `json:"template"`
+	Type             string `json:"type"`
+	Name             string `json:"name"`
+	Dir              string `json:"dir"`
+	Catalog          string `json:"catalog"`
+	TelegramChannel  string `json:"telegram_channel"`
+	Template         string `json:"template"`
+	IndexPlaceholder string `json:"index_placeholder"`
+	//Prefix           string `json:"prefix"`
 }
 
 func readConfig() (*config, error) {

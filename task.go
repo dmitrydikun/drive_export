@@ -31,8 +31,9 @@ const (
 	exportFormat = "xlsx"
 )
 
-type item struct {
+type task struct {
 	name    string
+	taskdir string
 	origin  string
 	id      string
 	source  string
@@ -41,10 +42,14 @@ type item struct {
 	updated bool
 }
 
-func newItem(cfg *config, icfg *itemConfig, dir string) (*item, error) {
-	targets := make(map[string]target, len(icfg.Targets))
-	for i, tcfg := range icfg.Targets {
-		t, err := newTarget(cfg, tcfg, dir)
+func newTask(cfg *config, tcfg *taskConfig, expdir string) (*task, error) {
+	tdir := filepath.Join(expdir, tcfg.Name)
+	if err := os.MkdirAll(tdir, dirPerm); err != nil {
+		return nil, fmt.Errorf("failed to create task %s export dir: %v", tcfg.Name, err)
+	}
+	targets := make(map[string]target, len(tcfg.Targets))
+	for i, tcfg := range tcfg.Targets {
+		t, err := newTarget(cfg, tcfg, tdir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init target %d: %v", i, err)
 		}
@@ -53,26 +58,27 @@ func newItem(cfg *config, icfg *itemConfig, dir string) (*item, error) {
 		}
 		targets[t.ID()] = t
 	}
-	return &item{
-		name:    icfg.Name,
-		origin:  icfg.File,
-		source:  filepath.Join(dir, icfg.File+"."+exportFormat),
-		result:  filepath.Join(dir, icfg.File+"_result."+exportFormat),
+	return &task{
+		name:    tcfg.Name,
+		taskdir: tdir,
+		origin:  tcfg.File,
+		source:  filepath.Join(tdir, tcfg.File+"."+exportFormat),
+		result:  filepath.Join(tdir, tcfg.File+"_result."+exportFormat),
 		targets: targets,
 	}, nil
 }
 
-func (item *item) fetch(fs *drive.FilesService) error {
-	id, err := exportDriveFile(fs, item.origin, originMIME, item.source, exportMIME)
+func (task *task) fetch(fs *drive.FilesService) error {
+	id, err := exportDriveFile(fs, task.origin, originMIME, task.source, exportMIME)
 	if err != nil {
 		return err
 	}
-	item.id = id
+	task.id = id
 	return nil
 }
 
-func (item *item) process(fs *drive.FilesService) error {
-	f, err := excelize.OpenFile(item.source)
+func (task *task) process(fs *drive.FilesService) error {
+	f, err := excelize.OpenFile(task.source)
 	if err != nil {
 		return fmt.Errorf("failed to open source file: %v", err)
 	}
@@ -95,7 +101,7 @@ func (item *item) process(fs *drive.FilesService) error {
 	statusColumns := make(map[string]int)
 	recordIdColumns := make(map[string]int)
 	for i, f := range fields {
-		for _, t := range item.targets {
+		for _, t := range task.targets {
 			if f == targetStatusFieldName(t) {
 				statusColumns[t.ID()] = i
 				continue
@@ -106,10 +112,10 @@ func (item *item) process(fs *drive.FilesService) error {
 			}
 		}
 	}
-	if len(statusColumns) != len(item.targets) {
+	if len(statusColumns) != len(task.targets) {
 		return errors.New("invalid source: invalid status columns number")
 	}
-	if len(recordIdColumns) != len(item.targets) {
+	if len(recordIdColumns) != len(task.targets) {
 		return errors.New("invalid source: invalid record id columns number")
 	}
 
@@ -145,7 +151,7 @@ func (item *item) process(fs *drive.FilesService) error {
 		total++
 
 		var insertTargets, updateTargets []target
-		for tid, t := range item.targets {
+		for tid, t := range task.targets {
 			statusIdx, recordIdIdx := statusColumns[tid], recordIdColumns[tid]
 			var status, recordId string
 			if len(row) > statusIdx {
@@ -173,6 +179,7 @@ func (item *item) process(fs *drive.FilesService) error {
 		}
 
 		success := true
+
 		for _, t := range insertTargets {
 			status := "ok"
 			id, err := t.Insert(rec, fs)
@@ -190,15 +197,17 @@ func (item *item) process(fs *drive.FilesService) error {
 				}
 			}
 		}
+
 		//for _, t := range updateTargets {
 		//
 		//}
+
 		if success {
 			done++
 		} else {
 			fail++
 		}
-		item.updated = true
+		task.updated = true
 	}
 
 	if err = rows.Close(); err != nil {
@@ -207,27 +216,27 @@ func (item *item) process(fs *drive.FilesService) error {
 
 	log.Printf("total: %d; processed: %d; failed: %d\n", total, done, fail)
 
-	if item.updated {
-		if err := f.SaveAs(item.result); err != nil {
+	if task.updated {
+		if err := f.SaveAs(task.result); err != nil {
 			return fmt.Errorf("failed to save file: %v", err)
 		}
 	}
 	return err
 }
 
-func (item *item) update(fs *drive.FilesService) error {
-	if !item.updated {
+func (task *task) update(fs *drive.FilesService) error {
+	if !task.updated {
 		return nil
 	}
 
-	f, err := os.OpenFile(item.result, os.O_RDONLY, filePerm)
+	f, err := os.OpenFile(task.result, os.O_RDONLY, filePerm)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	_, err = fs.Update(item.id, &drive.File{
-		Name:     item.origin,
+	_, err = fs.Update(task.id, &drive.File{
+		Name:     task.origin,
 		MimeType: originMIME,
 	}).Media(f).Do()
 
