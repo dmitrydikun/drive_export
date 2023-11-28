@@ -31,8 +31,8 @@ type export struct {
 }
 
 const (
-	filePerm = 0600
-	dirPerm  = 0700
+	filePerm = 0644
+	dirPerm  = 0755
 )
 
 func newExport(cfg *config) (*export, error) {
