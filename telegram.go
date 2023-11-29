@@ -169,7 +169,7 @@ func telegramGetUpdates(token string, offset int) ([]*telegramUpdate, error) {
 	}
 
 	var updates []*telegramUpdate
-	if err = json.Unmarshal(resp.Result, updates); err != nil {
+	if err = json.Unmarshal(resp.Result, &updates); err != nil {
 		return nil, err
 	}
 
