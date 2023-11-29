@@ -117,6 +117,13 @@ func telegramParseResponse(resp *http.Response) (string, error) {
 	return "?", nil
 }
 
+type telegramResponse struct {
+	OK          bool            `json:"ok"`
+	Result      json.RawMessage `json:"result'"`
+	ErrorCode   int             `json:"error_code"`
+	Description string          `json:"description"`
+}
+
 type telegramUser struct {
 	Id       int    `json:"id"`
 	Username string `json:"username"`
@@ -139,16 +146,36 @@ type telegramUpdate struct {
 }
 
 func telegramGetUpdates(token string, offset int) ([]*telegramUpdate, error) {
-	resp, err := http.Get(fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d", token, offset+1))
+	r, err := http.Get(fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d", token, offset+1))
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer r.Body.Close()
+
+	var resp telegramResponse
+	if err = json.NewDecoder(r.Body).Decode(&resp); err != nil {
+		return nil, err
+	}
+
+	if !resp.OK {
+		code, desc := "?", "?"
+		if resp.ErrorCode != 0 {
+			code = strconv.Itoa(resp.ErrorCode)
+		}
+		if resp.Description != "" {
+			desc = resp.Description
+		}
+		return nil, fmt.Errorf("telegram request error %s: %s", code, desc)
+	}
 
 	var updates []*telegramUpdate
+	if err = json.Unmarshal(resp.Result, updates); err != nil {
+		return nil, err
+	}
+
 	for {
 		var u telegramUpdate
-		if err = json.NewDecoder(resp.Body).Decode(&u); err != nil {
+		if err = json.NewDecoder(r.Body).Decode(&u); err != nil {
 			if err == io.EOF {
 				return updates, nil
 			}
