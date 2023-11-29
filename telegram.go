@@ -172,12 +172,15 @@ func telegramListenBot(cfg *config, f func() ([]taskResult, error)) error {
 	}
 	errnum := 0
 
+	log.Println("listening...")
+
 	for {
 		reqs, err := func() (map[int]struct{}, error) {
 			updates, err := telegramGetUpdates(cfg.TelegramBotToken, offset)
 			if err != nil {
 				return nil, err
 			}
+			log.Printf("received %d updates\n", len(updates))
 			reqs := make(map[int]struct{})
 			for _, u := range updates {
 				if u.UpdateId == 0 {
@@ -199,13 +202,14 @@ func telegramListenBot(cfg *config, f func() ([]taskResult, error)) error {
 		}()
 
 		if err != nil {
-			log.Printf("bot listening error: %v\n", err)
+			log.Printf("listening error: %v\n", err)
 			if errnum++; errnum > cfg.BotMaxErrors {
 				return err
 			}
 		} else {
 			errnum = 0
 			if len(reqs) != 0 {
+				log.Printf("received %d sync requests\n", len(reqs))
 
 				for chat := range reqs {
 					if _, err = telegramSendMessage(cfg.TelegramBotToken, strconv.Itoa(chat), "starting sync..."); err != nil {
@@ -213,6 +217,7 @@ func telegramListenBot(cfg *config, f func() ([]taskResult, error)) error {
 					}
 				}
 
+				log.Println("starting sync...")
 				report := ""
 				if results, err := f(); err != nil {
 					report = fmt.Sprintf("sync failed: %v", err)
