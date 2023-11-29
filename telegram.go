@@ -22,7 +22,6 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -212,25 +211,21 @@ func telegramListenBot(cfg *config, f func() ([]taskResult, error)) error {
 			reqs := make(map[int]struct{})
 			for _, u := range updates {
 
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				enc.Encode(u)
+				//enc := json.NewEncoder(os.Stdout)
+				//enc.SetIndent("", "  ")
+				//enc.Encode(u)
 
 				if u.UpdateId == 0 {
-					log.Println("update_id = 0")
 					continue
 				}
 				offset = u.UpdateId
 				if u.Message.Date < startTime {
-					log.Println("bad time")
 					continue
 				}
 				if _, ok := users[u.Message.From.Id]; !ok {
-					log.Println("bad user")
 					continue
 				}
 				if u.Message.Text != cfg.BotTriggerMessage {
-					log.Println("bad message")
 					continue
 				}
 				reqs[u.Message.Chat.Id] = struct{}{}

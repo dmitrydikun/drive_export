@@ -73,7 +73,7 @@ func (exp *export) fetch() {
 }
 
 func (exp *export) process() []taskResult {
-	results := make([]taskResult, len(exp.tasks))
+	var results []taskResult
 	for _, t := range exp.tasks {
 		log.Printf("processing task: %s\n", t.name)
 		result := t.process(exp.fs)
