@@ -126,7 +126,7 @@ type telegramChat struct {
 }
 
 type telegramMessage struct {
-	User telegramUser `json:"user"`
+	From telegramUser `json:"from"`
 	Chat telegramChat `json:"chat"`
 	Text string       `json:"text"`
 	Date int64        `json:"date"`
@@ -187,7 +187,7 @@ func telegramListenBot(cfg *config, f func() ([]taskResult, error)) error {
 				if u.Message.Date < startTime {
 					continue
 				}
-				if _, ok := users[u.Message.User.Id]; !ok {
+				if _, ok := users[u.Message.From.Id]; !ok {
 					continue
 				}
 				if u.Message.Text != cfg.BotTriggerMessage {
