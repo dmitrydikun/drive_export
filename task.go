@@ -77,151 +77,160 @@ func (task *task) fetch(fs *drive.FilesService) error {
 	return nil
 }
 
-func (task *task) process(fs *drive.FilesService) error {
-	f, err := excelize.OpenFile(task.source)
-	if err != nil {
-		return fmt.Errorf("failed to open source file: %v", err)
-	}
-	defer f.Close()
+type taskResult struct {
+	name   string
+	total  int
+	done   int
+	failed int
+	err    error
+}
 
-	sheet := f.GetSheetName(0)
-	rows, err := f.Rows(sheet)
-	if err != nil {
-		return fmt.Errorf("failed to get rows: %v", err)
-	}
-	defer rows.Close()
-
-	if !rows.Next() {
-		return errors.New("source file empty")
-	}
-	fields, err := rows.Columns()
-	if err != nil {
-		return fmt.Errorf("failed to parse field names: %v", err)
-	}
-	statusColumns := make(map[string]int)
-	recordIdColumns := make(map[string]int)
-	for i, f := range fields {
-		for _, t := range task.targets {
-			if f == targetStatusFieldName(t) {
-				statusColumns[t.ID()] = i
-				continue
-			}
-			if f == targetRecordIdFieldName(t) {
-				recordIdColumns[t.ID()] = i
-				continue
-			}
-		}
-	}
-	if len(statusColumns) != len(task.targets) {
-		return errors.New("invalid source: invalid status columns number")
-	}
-	if len(recordIdColumns) != len(task.targets) {
-		return errors.New("invalid source: invalid record id columns number")
-	}
-
-	columnLetter := func(idx int) string {
-		return string([]byte{byte('A' + idx)})
-	}
-	setStatus := func(t target, i int, status string) error {
-		if err := f.SetCellValue(sheet, columnLetter(statusColumns[t.ID()])+strconv.Itoa(i), status); err != nil {
-			return fmt.Errorf("failed to set target %s status for row %d: %v", t.ID(), i, err)
-		}
-		return nil
-	}
-	setRecordId := func(t target, i int, id string) error {
-		if err := f.SetCellValue(sheet, columnLetter(recordIdColumns[t.ID()])+strconv.Itoa(i), id); err != nil {
-			return fmt.Errorf("failed to set target %s record id for row %d: %v", t.ID(), i, err)
-		}
-		return nil
-	}
-
-	var i = 1
-	var total, done, fail int
-	for rows.Next() {
-		i++
-		row, err := rows.Columns()
+func (task *task) process(fs *drive.FilesService) taskResult {
+	result := taskResult{name: task.name}
+	result.err = func() error {
+		f, err := excelize.OpenFile(task.source)
 		if err != nil {
-			log.Printf("failed to scan row %d: %v\n", i, err)
-			continue
+			return fmt.Errorf("failed to open source file: %v", err)
 		}
-		if len(row) == 0 {
-			break
+		defer f.Close()
+
+		sheet := f.GetSheetName(0)
+		rows, err := f.Rows(sheet)
+		if err != nil {
+			return fmt.Errorf("failed to get rows: %v", err)
 		}
+		defer rows.Close()
 
-		total++
-
-		var insertTargets, updateTargets []target
-		for tid, t := range task.targets {
-			statusIdx, recordIdIdx := statusColumns[tid], recordIdColumns[tid]
-			var status, recordId string
-			if len(row) > statusIdx {
-				status = row[statusIdx]
-			}
-			if len(row) > recordIdIdx {
-				recordId = row[recordIdIdx]
-			}
-			if status == "" && recordId == "" {
-				insertTargets = append(insertTargets, t)
-				continue
-			}
-			if status == "" && recordId != "" {
-				updateTargets = append(updateTargets, t)
-				continue
-			}
+		if !rows.Next() {
+			return errors.New("source file empty")
 		}
-
-		if len(insertTargets) == 0 && len(updateTargets) == 0 {
-			continue
+		fields, err := rows.Columns()
+		if err != nil {
+			return fmt.Errorf("failed to parse field names: %v", err)
 		}
-		rec := make(map[string]string)
-		for i, cell := range row {
-			rec[fields[i]] = cell
-		}
-
-		success := true
-
-		for _, t := range insertTargets {
-			status := "ok"
-			id, err := t.Insert(rec, fs)
-			if err != nil {
-				success = false
-				status = err.Error()
-				log.Printf("failed to proccess target %s for row %d: %v", t.ID(), i, err)
-			}
-			if err = setStatus(t, i, status); err != nil {
-				return err
-			}
-			if status == "ok" {
-				if err = setRecordId(t, i, id); err != nil {
-					return err
+		statusColumns := make(map[string]int)
+		recordIdColumns := make(map[string]int)
+		for i, f := range fields {
+			for _, t := range task.targets {
+				if f == targetStatusFieldName(t) {
+					statusColumns[t.ID()] = i
+					continue
+				}
+				if f == targetRecordIdFieldName(t) {
+					recordIdColumns[t.ID()] = i
+					continue
 				}
 			}
 		}
-
-		//for _, t := range updateTargets {
-		//
-		//}
-
-		if success {
-			done++
-		} else {
-			fail++
+		if len(statusColumns) != len(task.targets) {
+			return errors.New("invalid source: invalid status columns number")
 		}
-		task.updated = true
-	}
-
-	if err = rows.Close(); err != nil {
-		log.Printf("failed to close rows: %v", err)
-	}
-
-	log.Printf("total: %d; processed: %d; failed: %d\n", total, done, fail)
-
-	if task.updated {
-		if err := f.SaveAs(task.result); err != nil {
-			return fmt.Errorf("failed to save file: %v", err)
+		if len(recordIdColumns) != len(task.targets) {
+			return errors.New("invalid source: invalid record id columns number")
 		}
-	}
-	return err
+
+		columnLetter := func(idx int) string {
+			return string([]byte{byte('A' + idx)})
+		}
+		setStatus := func(t target, i int, status string) error {
+			if err := f.SetCellValue(sheet, columnLetter(statusColumns[t.ID()])+strconv.Itoa(i), status); err != nil {
+				return fmt.Errorf("failed to set target %s status for row %d: %v", t.ID(), i, err)
+			}
+			return nil
+		}
+		setRecordId := func(t target, i int, id string) error {
+			if err := f.SetCellValue(sheet, columnLetter(recordIdColumns[t.ID()])+strconv.Itoa(i), id); err != nil {
+				return fmt.Errorf("failed to set target %s record id for row %d: %v", t.ID(), i, err)
+			}
+			return nil
+		}
+
+		var i = 1
+		for rows.Next() {
+			i++
+			row, err := rows.Columns()
+			if err != nil {
+				log.Printf("failed to scan row %d: %v\n", i, err)
+				continue
+			}
+			if len(row) == 0 {
+				break
+			}
+
+			result.total++
+
+			var insertTargets, updateTargets []target
+			for tid, t := range task.targets {
+				statusIdx, recordIdIdx := statusColumns[tid], recordIdColumns[tid]
+				var status, recordId string
+				if len(row) > statusIdx {
+					status = row[statusIdx]
+				}
+				if len(row) > recordIdIdx {
+					recordId = row[recordIdIdx]
+				}
+				if status == "" && recordId == "" {
+					insertTargets = append(insertTargets, t)
+					continue
+				}
+				if status == "" && recordId != "" {
+					updateTargets = append(updateTargets, t)
+					continue
+				}
+			}
+
+			if len(insertTargets) == 0 && len(updateTargets) == 0 {
+				continue
+			}
+			rec := make(map[string]string)
+			for i, cell := range row {
+				rec[fields[i]] = cell
+			}
+
+			success := true
+
+			for _, t := range insertTargets {
+				status := "ok"
+				id, err := t.Insert(rec, fs)
+				if err != nil {
+					success = false
+					status = err.Error()
+					log.Printf("failed to proccess target %s for row %d: %v", t.ID(), i, err)
+				}
+				if err = setStatus(t, i, status); err != nil {
+					return err
+				}
+				if status == "ok" {
+					if err = setRecordId(t, i, id); err != nil {
+						return err
+					}
+				}
+			}
+
+			//for _, t := range updateTargets {
+			//
+			//}
+
+			if success {
+				result.done++
+			} else {
+				result.failed++
+			}
+			task.updated = true
+		}
+
+		if err = rows.Close(); err != nil {
+			log.Printf("failed to close rows: %v", err)
+		}
+
+		if task.updated {
+			if err := f.SaveAs(task.result); err != nil {
+				return fmt.Errorf("failed to save file: %v", err)
+			}
+		}
+		return err
+	}()
+	return result
 }
 
 func (task *task) update(fs *drive.FilesService) error {

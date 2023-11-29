@@ -62,7 +62,7 @@ func newExport(cfg *config) (*export, error) {
 
 func (exp *export) fetch() {
 	for name, t := range exp.tasks {
-		log.Printf("fetching task: %s\n", t.name)
+		log.Printf("fetching files for task: %s\n", t.name)
 		if err := t.fetch(exp.fs); err != nil {
 			log.Printf("fail: %v\n", err)
 			delete(exp.tasks, name)
@@ -72,20 +72,30 @@ func (exp *export) fetch() {
 	}
 }
 
-func (exp *export) process() {
+func (exp *export) process() []taskResult {
+	results := make([]taskResult, len(exp.tasks))
 	for _, t := range exp.tasks {
 		log.Printf("processing task: %s\n", t.name)
-		if err := t.process(exp.fs); err != nil {
+		result := t.process(exp.fs)
+		results = append(results, result)
+		if result.err != nil {
+			log.Printf("fail: %v\n", result.err)
+		}
+	}
+	return results
+}
+
+func (exp *export) upload() {
+	for _, t := range exp.tasks {
+		log.Printf("updating files for task: %s\n", t.name)
+		if err := t.update(exp.fs); err != nil {
 			log.Printf("fail: %v\n", err)
 		}
 	}
 }
 
-func (exp *export) upload() {
-	for _, t := range exp.tasks {
-		log.Printf("updating task: %s\n", t.name)
-		if err := t.update(exp.fs); err != nil {
-			log.Printf("fail: %v\n", err)
-		}
+func (exp *export) clean() {
+	if err := os.RemoveAll(exp.dir); err != nil {
+		log.Print(err)
 	}
 }

@@ -19,10 +19,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func telegramSendMessage(token string, chat string, text string) (string, error) {
@@ -112,4 +114,128 @@ func telegramParseResponse(resp *http.Response) (string, error) {
 		}
 	}
 	return "?", nil
+}
+
+type telegramUser struct {
+	Id       int    `json:"id"`
+	Username string `json:"username"`
+}
+
+type telegramChat struct {
+	Id int `json:"id"`
+}
+
+type telegramMessage struct {
+	User telegramUser `json:"user"`
+	Chat telegramChat `json:"chat"`
+	Text string       `json:"text"`
+	Date int64        `json:"date"`
+}
+
+type telegramUpdate struct {
+	UpdateId int             `json:"update_id"`
+	Message  telegramMessage `json:"message"`
+}
+
+func telegramGetUpdates(token string, offset int) ([]*telegramUpdate, error) {
+	resp, err := http.Get(fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d", token, offset+1))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var updates []*telegramUpdate
+	for {
+		var u telegramUpdate
+		if err = json.NewDecoder(resp.Body).Decode(&u); err != nil {
+			if err == io.EOF {
+				return updates, nil
+			}
+			return nil, err
+		}
+		updates = append(updates, &u)
+	}
+}
+
+func telegramListenBot(cfg *config, f func() ([]taskResult, error)) error {
+	users := make(map[int]struct{})
+	for _, u := range cfg.BotUsers {
+		users[u] = struct{}{}
+	}
+
+	offset := 0
+	startTime := time.Now().Unix()
+
+	interval := 10 * time.Second
+	if cfg.BotRefreshInterval != 0 {
+		interval = time.Duration(cfg.BotRefreshInterval) * time.Second
+	}
+	errnum := 0
+
+	for {
+		reqs, err := func() (map[int]struct{}, error) {
+			updates, err := telegramGetUpdates(cfg.TelegramBotToken, offset)
+			if err != nil {
+				return nil, err
+			}
+			reqs := make(map[int]struct{})
+			for _, u := range updates {
+				if u.UpdateId == 0 {
+					continue
+				}
+				offset = u.UpdateId
+				if u.Message.Date < startTime {
+					continue
+				}
+				if _, ok := users[u.Message.User.Id]; !ok {
+					continue
+				}
+				if u.Message.Text != cfg.BotTriggerMessage {
+					continue
+				}
+				reqs[u.Message.Chat.Id] = struct{}{}
+			}
+			return reqs, nil
+		}()
+
+		if err != nil {
+			log.Printf("bot listening error: %v\n", err)
+			if errnum++; errnum > cfg.BotMaxErrors {
+				return err
+			}
+		} else {
+			errnum = 0
+			if len(reqs) != 0 {
+
+				for chat := range reqs {
+					if _, err = telegramSendMessage(cfg.TelegramBotToken, strconv.Itoa(chat), "starting sync..."); err != nil {
+						log.Println(err)
+					}
+				}
+
+				report := ""
+				if results, err := f(); err != nil {
+					report = fmt.Sprintf("sync failed: %v", err)
+				} else {
+					for _, result := range results {
+						report += result.name + "\n"
+						if result.err != nil {
+							report += fmt.Sprintf("error: %s\n", err)
+						}
+						report += fmt.Sprintf("records: total %d, done %d, failed %d\n", result.total, result.done, result.failed)
+					}
+				}
+
+				log.Println(report)
+
+				for chat := range reqs {
+					if _, err = telegramSendMessage(cfg.TelegramBotToken, strconv.Itoa(chat), report); err != nil {
+						log.Println(err)
+					}
+				}
+			}
+		}
+
+		time.Sleep(interval)
+	}
 }

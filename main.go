@@ -15,20 +15,45 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 )
 
+var (
+	flagNoClean = flag.Bool("no-clean", false, "do not remove fetched/modified files on exit")
+	flagBotMode = flag.Bool("bot-mode", false, "listen bot events")
+)
+
 func main() {
+	flag.Parse()
+
 	cfg, err := readConfig()
 	if err != nil {
-
 		log.Fatalf("failed to read config: %v", err)
 	}
-	exp, err := newExport(cfg)
-	if err != nil {
-		log.Fatalf("failed init export: %v", err)
+
+	runExport := func() ([]taskResult, error) {
+		exp, err := newExport(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed init export: %v", err)
+		}
+		exp.fetch()
+		results := exp.process()
+		exp.upload()
+		if !*flagNoClean {
+			exp.clean()
+		}
+		return results, nil
 	}
-	exp.fetch()
-	exp.process()
-	exp.upload()
+
+	if *flagBotMode {
+		err = telegramListenBot(cfg, runExport)
+	} else {
+		_, err = runExport()
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
 }

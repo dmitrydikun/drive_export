@@ -24,6 +24,10 @@ type config struct {
 	GoogleCredentialsFile string        `json:"google_credentials_file"`
 	GoogleTokenFile       string        `json:"google_token_file"`
 	TelegramBotToken      string        `json:"telegram_bot_token"`
+	BotUsers              []int         `json:"bot_users"`
+	BotRefreshInterval    int           `json:"bot_refresh_interval"`
+	BotMaxErrors          int           `json:"bot_max_errors"`
+	BotTriggerMessage     string        `json:"bot_trigger_message"`
 	Tasks                 []*taskConfig `json:"tasks"`
 }
 
